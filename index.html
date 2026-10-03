@@ -83,8 +83,23 @@ const $=id=>document.getElementById(id), root=document.querySelector('main');
 const view=v=>root.dataset.view=v;
 let pc,stream,tick,raf,actx;
 
-const enc=d=>btoa(JSON.stringify(d));
-const dec=s=>JSON.parse(atob(s.trim()));
+function enc(d){
+  return 'VC1.'+btoa(JSON.stringify(d))
+    .replace(/\\+/g,'-')
+    .replace(/\\//g,'_')
+    .replace(/=+$/,'');
+}
+function dec(s){
+  s=s.trim().replace(/\\s+/g,'');
+  if(s.startsWith('VC1.'))s=s.slice(4);
+  s=s.replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length%4)s+='=';
+  const d=JSON.parse(atob(s));
+  if(!d||!['offer','answer'].includes(d.type)||typeof d.sdp!=='string'){
+    throw new Error('Invalid signaling code');
+  }
+  return d;
+}
 
 async function setup(){
   stream=await navigator.mediaDevices.getUserMedia({audio:true});
@@ -142,21 +157,45 @@ $('startBtn').onclick=async()=>{
 };
 $('connectBtn').onclick=async()=>{
   $('err1').textContent='';
-  try{await pc.setRemoteDescription(dec($('answerIn').value));}
-  catch(e){$('err1').textContent='That reply code is not valid. Copy it again in full.'}
+  let answer;
+  try{
+    answer=dec($('answerIn').value);
+    if(answer.type!=='answer')throw new Error('Expected an answer code');
+  }catch(e){
+    console.error('Reply code decode error:',e);
+    $('err1').textContent='Reply code could not be read. Copy the entire code again.';
+    return;
+  }
+  try{
+    await pc.setRemoteDescription(answer);
+  }catch(e){
+    console.error('setRemoteDescription error:',e);
+    const detail=e.errorDetail?(' '+e.errorDetail):'';
+    $('err1').textContent='Reply code was read, but WebRTC rejected it: '+(e.name||'UnknownError')+detail;
+  }
 };
 $('joinBtn').onclick=()=>{view('joiner');$('err2').textContent='';$('offerIn').value='';$('answerOut').value=''};
 $('makeAnswer').onclick=async()=>{
   $('err2').textContent='';
   let offer;
-  try{offer=dec($('offerIn').value)}catch{return $('err2').textContent='That invite code is not valid. Copy it again in full.'}
+  try{
+    offer=dec($('offerIn').value);
+    if(offer.type!=='offer')throw new Error('Expected an offer code');
+  }catch(e){
+    console.error('Invite code decode error:',e);
+    $('err2').textContent='Invite code could not be read. Copy the entire code again.';
+    return;
+  }
   try{
     await setup();
     await pc.setRemoteDescription(offer);
     await pc.setLocalDescription(await pc.createAnswer());
     await gathered();
     $('answerOut').value=enc(pc.localDescription);
-  }catch(e){fail($('err2'),e)}
+  }catch(e){
+    console.error('Create reply error:',e);
+    fail($('err2'),e);
+  }
 };
 const copy=(id,btn)=>async()=>{
   const t=$(id).value;if(!t)return;
