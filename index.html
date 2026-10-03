@@ -7,7 +7,6 @@
 <style>
 :root{--bg:#f2f5f1;--panel:#fff;--ink:#15221d;--mute:#5d6e66;--line:#d3dcd6;--go:#1f7a4d;--stop:#c8402b;--on:#fff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101a16;--panel:#18261f;--ink:#eaf2ec;--mute:#93a79b;--line:#2a3d33;--go:#3fbf82;--stop:#ee6a52;--on:#0b1410}}
-:root[data-theme="dark"]{--bg:#101a16;--panel:#18261f;--ink:#eaf2ec;--mute:#93a79b;--line:#2a3d33;--go:#3fbf82;--stop:#ee6a52;--on:#0b1410}
 *{box-sizing:border-box}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:grid;place-items:center;padding:16px}
@@ -22,47 +21,48 @@ button.stop{background:var(--stop);color:#fff}
 button:disabled{opacity:.5;cursor:default}
 :focus-visible{outline:3px solid var(--go);outline-offset:2px}
 label{display:block;font-weight:600;margin:14px 0 6px}
-textarea{width:100%;height:84px;resize:none;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg);color:var(--ink);font:12px/1.4 ui-monospace,Menlo,Consolas,monospace}
-.err{color:var(--stop);min-height:1.5em;margin:10px 0 0;font-size:.9rem}
+input{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--bg);color:var(--ink);font:inherit}
+.small{font-size:.88rem}
+.status{min-height:1.5em;margin:10px 0 0;font-size:.9rem}
+.status.bad{color:var(--stop)}
+.status.good{color:var(--go)}
 #live{text-align:center}
 #timer{font-size:3rem;font-weight:700;font-variant-numeric:tabular-nums;margin:12px 0 4px}
 .meter{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:16px 0 8px}
 #bar{height:100%;width:0;background:var(--go);transition:width .08s}
+.linkbox{word-break:break-all;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:10px}
+.hidden{display:none!important}
 </style>
 </head>
 <body>
 <main data-view="home">
   <section id="home">
     <h1>Voice call</h1>
-    <p>Talk to one person, directly from your browser. No account, no server.</p>
+    <p>Private two-person voice calls directly between browsers.</p>
     <button id="startBtn">Start a call</button>
     <button id="joinBtn" class="alt">Join a call</button>
+    <input id="joinInput" class="hidden" placeholder="Paste a call link or room code">
+    <button id="joinInputBtn" class="alt hidden">Continue</button>
+    <p id="homeStatus" class="status" role="alert"></p>
   </section>
 
   <section id="caller">
     <h1>Start a call</h1>
-    <p>Send your invite code to the person you want to call.</p>
-    <label for="offerOut">1. Your invite code</label>
-    <textarea id="offerOut" readonly placeholder="Preparing…"></textarea>
-    <button id="copyOffer" class="alt">Copy invite code</button>
-    <label for="answerIn">2. Their reply code</label>
-    <textarea id="answerIn" placeholder="Paste the reply code here"></textarea>
-    <button id="connectBtn">Connect</button>
-    <button class="alt back">Cancel</button>
-    <p class="err" id="err1" role="alert"></p>
+    <p id="callerStatus">Creating your private call link…</p>
+    <label>Share this link</label>
+    <div id="callLink" class="linkbox"></div>
+    <button id="copyLink">Copy call link</button>
+    <button id="shareLink" class="alt">Share call link</button>
+    <button id="callerCancel" class="alt">Cancel</button>
+    <p id="callerError" class="status bad" role="alert"></p>
   </section>
 
   <section id="joiner">
     <h1>Join a call</h1>
-    <p>Paste the invite code you received, then send your reply code back.</p>
-    <label for="offerIn">1. Invite code</label>
-    <textarea id="offerIn" placeholder="Paste the invite code here"></textarea>
-    <button id="makeAnswer">Create reply code</button>
-    <label for="answerOut">2. Your reply code</label>
-    <textarea id="answerOut" readonly placeholder="Appears after step 1"></textarea>
-    <button id="copyAnswer" class="alt">Copy reply code</button>
-    <button class="alt back">Cancel</button>
-    <p class="err" id="err2" role="alert"></p>
+    <p>Allow microphone access, then wait for the other person to connect.</p>
+    <button id="joinCallBtn">Join call</button>
+    <button id="joinCancel" class="alt">Cancel</button>
+    <p id="joinStatus" class="status" role="alert"></p>
   </section>
 
   <section id="live">
@@ -72,157 +72,349 @@ textarea{width:100%;height:84px;resize:none;border:1px solid var(--line);border-
     <p>Your microphone level</p>
     <button id="muteBtn" class="alt">Mute</button>
     <button id="hangBtn" class="stop">Hang up</button>
+    <p id="liveStatus" class="status"></p>
   </section>
 </main>
-<audio id="remote" autoplay></audio>
 
+<audio id="remote" autoplay playsinline></audio>
+<script src="config.js"></script>
 <script>
-const $=id=>document.getElementById(id), root=document.querySelector('main');
-const view=v=>root.dataset.view=v;
-let pc,stream,tick,raf,actx;
+const $=id=>document.getElementById(id);
+const root=document.querySelector('main');
 
-const enc=d=>btoa(JSON.stringify(d));
-function dec(s){
-  s=s.trim().replace(/\s+/g,'');
-  if(s.startsWith('VC1.')){
-    s=s.slice(4).replace(/-/g,'+').replace(/_/g,'/');
-    while(s.length%4)s+='=';
-  }
-  return JSON.parse(atob(s));
+const SIGNAL_BASE=(window.VOICE_CALL_CONFIG?.SIGNAL_BASE||'').replace(/\/$/,'');
+const configured=SIGNAL_BASE && !SIGNAL_BASE.includes('YOUR-WORKER');
+
+let pc=null,stream=null,socket=null,room=null,role=null;
+let remoteCandidates=[],callStartedAt=0,tick=null,raf=null,actx=null;
+let restarting=false;
+
+function view(v){root.dataset.view=v}
+function setStatus(id,text,bad=false){
+  const el=$(id);el.textContent=text;el.className='status'+(bad?' bad':'');
+}
+function randomRoom(){
+  const bytes=new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function wsUrl(){
+  return SIGNAL_BASE.replace(/^http:/,'ws:').replace(/^https:/,'wss:')+
+    '/ws?room='+encodeURIComponent(room)+'&role='+encodeURIComponent(role);
+}
+function shareUrl(){
+  return location.origin+location.pathname+'?room='+encodeURIComponent(room);
+}
+function roomFromInput(value){
+  const s=value.trim();
+  try{
+    const u=new URL(s);
+    return u.searchParams.get('room');
+  }catch{}
+  return /^[A-Za-z0-9_-]{16,80}$/.test(s)?s:null;
 }
 
-async function setup(){
+async function getIceServers(){
+  if(!configured)throw new Error('The signaling server is not configured yet.');
+  const r=await fetch(SIGNAL_BASE+'/ice',{cache:'no-store'});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok||!data.iceServers)throw new Error(data.error||'Could not get TURN credentials.');
+  return data.iceServers;
+}
+
+async function setupPeer(){
+  const iceServers=await getIceServers();
   stream=await navigator.mediaDevices.getUserMedia({audio:true});
-  pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  pc=new RTCPeerConnection({iceServers});
+
   stream.getTracks().forEach(t=>pc.addTrack(t,stream));
-  pc.ontrack=e=>{$('remote').srcObject=e.streams[0]};
-  pc.onconnectionstatechange=()=>{
-    if(pc.connectionState==='connected'){
-      $('err1').textContent='';$('err2').textContent='';
+
+  pc.ontrack=e=>{
+    const remote=e.streams[0];
+    $('remote').srcObject=remote;
+    $('remote').play().catch(()=>{});
+  };
+
+  pc.onicecandidate=e=>{
+    if(e.candidate)send({type:'candidate',candidate:e.candidate});
+  };
+
+  pc.oniceconnectionstatechange=async()=>{
+    if(!pc)return;
+    const state=pc.iceConnectionState;
+    if(['checking'].includes(state)){
+      if(root.dataset.view!=='live')setStatus(role==='caller'?'callerError':'joinStatus','Connecting…');
+    }else if(['connected','completed'].includes(state)){
+      setStatus(role==='caller'?'callerError':'joinStatus','');
       goLive();
-    }else if(pc.connectionState==='failed'){
-      const msg='WebRTC connection failed. ICE state: '+pc.iceConnectionState+'.';
-      if(root.dataset.view==='caller')$('err1').textContent=msg;
-      else if(root.dataset.view==='joiner')$('err2').textContent=msg;
-      else end();
-    }else if(pc.connectionState==='disconnected'){
-      if(root.dataset.view==='caller')$('err1').textContent='WebRTC connection disconnected. ICE state: '+pc.iceConnectionState+'.';
-      else if(root.dataset.view==='joiner')$('err2').textContent='WebRTC connection disconnected. ICE state: '+pc.iceConnectionState+'.';
-      else end();
+    }else if(state==='failed'){
+      if(role==='caller'&&!restarting){
+        restarting=true;
+        try{
+          setStatus('callerError','Reconnecting…');
+          pc.restartIce();
+          const offer=await pc.createOffer({iceRestart:true});
+          await pc.setLocalDescription(offer);
+          send({type:'offer',offer:pc.localDescription});
+        }catch(e){
+          setStatus('callerError','Connection failed: '+e.message,true);
+        }
+      }else{
+        setStatus(role==='caller'?'callerError':'joinStatus','Connection failed. Check that both phones are online and try again.',true);
+      }
+    }else if(state==='disconnected'&&root.dataset.view==='live'){
+      setStatus('liveStatus','Connection interrupted. Trying to recover…');
     }
   };
-  pc.oniceconnectionstatechange=()=>{
-    if(['checking','connected','completed'].includes(pc.iceConnectionState)){
-      const msg='Connecting… ICE: '+pc.iceConnectionState;
-      if(root.dataset.view==='caller')$('err1').textContent=msg;
-      else if(root.dataset.view==='joiner')$('err2').textContent=msg;
-    }
+
+  pc.onconnectionstatechange=()=>{
+    if(!pc)return;
+    if(pc.connectionState==='connected')goLive();
+    if(pc.connectionState==='failed'&&root.dataset.view==='live')end(false);
   };
 }
-function gathered(){
-  return new Promise(res=>{
-    if(pc.iceGatheringState==='complete')return res();
-    pc.onicegatheringstatechange=()=>pc.iceGatheringState==='complete'&&res();
-    setTimeout(res,4000);
+
+async function handleRemoteCandidate(candidate){
+  if(!pc)return;
+  if(pc.remoteDescription){
+    try{await pc.addIceCandidate(candidate)}
+    catch(e){setStatus(role==='caller'?'callerError':'joinStatus','ICE candidate error: '+e.message,true)}
+  }else{
+    remoteCandidates.push(candidate);
+  }
+}
+async function flushCandidates(){
+  for(const c of remoteCandidates){
+    try{await pc.addIceCandidate(c)}catch{}
+  }
+  remoteCandidates=[];
+}
+
+function send(data){
+  if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify(data));
+}
+
+async function handleSignal(data){
+  if(data.type==='connected'){
+    if(role==='caller'){
+      setStatus('callerError','Waiting for the other person to join…');
+      const offer=await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      send({type:'offer',offer:pc.localDescription});
+    }
+    return;
+  }
+
+  if(data.type==='peer-present'){
+    if(role==='caller')setStatus('callerError','They joined. Connecting…');
+    return;
+  }
+
+  if(data.type==='peer-state'){
+    if(data.connected&&role==='caller')setStatus('callerError','They joined. Connecting…');
+    return;
+  }
+
+  if(data.type==='offer'&&role==='joiner'){
+    try{
+      if(!pc)await setupPeer();
+      await pc.setRemoteDescription(data.offer);
+      await flushCandidates();
+      const answer=await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      send({type:'answer',answer:pc.localDescription});
+      setStatus('joinStatus','Connecting…');
+    }catch(e){
+      setStatus('joinStatus','Could not join: '+e.message,true);
+    }
+    return;
+  }
+
+  if(data.type==='answer'&&role==='caller'){
+    try{
+      if(pc.signalingState!=='have-local-offer')return;
+      await pc.setRemoteDescription(data.answer);
+      await flushCandidates();
+      setStatus('callerError','Connecting…');
+    }catch(e){
+      setStatus('callerError','Could not complete the call: '+e.message,true);
+    }
+    return;
+  }
+
+  if(data.type==='candidate'){
+    await handleRemoteCandidate(data.candidate);
+    return;
+  }
+
+  if(data.type==='peer-left'){
+    if(root.dataset.view==='live'){
+      setStatus('liveStatus','The other person left the call.');
+      setTimeout(()=>end(false),1200);
+    }else if(root.dataset.view==='caller'){
+      setStatus('callerError','The other person left. Waiting for them to reconnect.');
+    }
+    return;
+  }
+
+  if(data.type==='hangup'){
+    end(false);
+  }
+}
+
+function openSocket(){
+  return new Promise((resolve,reject)=>{
+    socket=new WebSocket(wsUrl());
+    socket.onopen=()=>resolve();
+    socket.onmessage=e=>{
+      try{handleSignal(JSON.parse(e.data))}catch(err){
+        setStatus(role==='caller'?'callerError':'joinStatus','Signaling error: '+err.message,true);
+      }
+    };
+    socket.onerror=()=>reject(new Error('Could not connect to the signaling server.'));
+    socket.onclose=()=>{
+      if(root.dataset.view==='live')setStatus('liveStatus','Signaling connection lost.',true);
+    };
   });
 }
-function fail(el,e){
-  el.textContent=e.name==='NotAllowedError'?'Microphone access was blocked. Allow it in your browser and try again.':
-    e.name==='NotFoundError'?'No microphone found.':'Something went wrong: '+e.message;
+
+async function beginCaller(){
+  if(!configured){
+    setStatus('homeStatus','The signaling server still needs to be configured.',true);
+    return;
+  }
+  room=randomRoom();
+  role='caller';
+  view('caller');
+  $('callLink').textContent=shareUrl();
+  try{
+    await setupPeer();
+    await openSocket();
+  }catch(e){
+    setStatus('callerError',e.message,true);
+  }
 }
 
-$('startBtn').onclick=async()=>{
-  view('caller');$('err1').textContent='';$('offerOut').value='';
-  try{
-    await setup();
-    await pc.setLocalDescription(await pc.createOffer());
-    await gathered();
-    $('offerOut').value=enc(pc.localDescription);
-  }catch(e){fail($('err1'),e)}
-};
-$('connectBtn').onclick=async()=>{
-  const btn=$('connectBtn');
-  $('err1').textContent='';
-  if(!pc)return;
-  if(pc.signalingState==='stable'){
-    if(pc.currentRemoteDescription){
-      if(pc.connectionState==='connected')goLive();
-      return;
-    }
-    return $('err1').textContent='The call is already in a stable state. Start a new call and use a fresh reply code.';
+async function prepareJoin(roomId){
+  if(!roomId)return;
+  if(!configured){
+    setStatus('homeStatus','The signaling server still needs to be configured.',true);
+    return;
   }
-  btn.disabled=true;
-  let answer;
-  try{answer=dec($('answerIn').value)}
-  catch(e){
-    btn.disabled=false;
-    return $('err1').textContent='That reply code is not valid. Copy it again in full.';
-  }
-  try{
-    if(!answer || answer.type!=='answer' || !answer.sdp) throw new Error('The reply code does not contain a valid WebRTC answer.');
-    await pc.setRemoteDescription(answer);
-  }catch(e){
-    $('err1').textContent='WebRTC connection error: '+e.message;
-    btn.disabled=false;
-  }
-};
-$('joinBtn').onclick=()=>{view('joiner');$('err2').textContent='';$('offerIn').value='';$('answerOut').value=''};
-$('makeAnswer').onclick=async()=>{
-  $('err2').textContent='';
-  let offer;
-  try{offer=dec($('offerIn').value)}catch{return $('err2').textContent='That invite code is not valid. Copy it again in full.'}
-  try{
-    await setup();
-    await pc.setRemoteDescription(offer);
-    await pc.setLocalDescription(await pc.createAnswer());
-    await gathered();
-    $('answerOut').value=enc(pc.localDescription);
-  }catch(e){fail($('err2'),e)}
-};
-const copy=(id,btn)=>async()=>{
-  const t=$(id).value;if(!t)return;
-  try{await navigator.clipboard.writeText(t)}catch{$(id).select();document.execCommand('copy')}
-  const old=btn.textContent;btn.textContent='Copied';setTimeout(()=>btn.textContent=old,1500);
-};
-$('copyOffer').onclick=copy('offerOut',$('copyOffer'));
-$('copyAnswer').onclick=copy('answerOut',$('copyAnswer'));
-document.querySelectorAll('.back').forEach(b=>b.onclick=end);
+  room=roomId;
+  role='joiner';
+  view('joiner');
+  setStatus('joinStatus','Ready to join.');
+}
 
 function goLive(){
   if(root.dataset.view==='live')return;
   view('live');
-  const t0=Date.now();
+  callStartedAt=Date.now();
+  clearInterval(tick);
   tick=setInterval(()=>{
-    const s=Math.floor((Date.now()-t0)/1000);
+    const s=Math.floor((Date.now()-callStartedAt)/1000);
     $('timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
   },500);
+
   try{
     actx=new (window.AudioContext||window.webkitAudioContext)();
     const an=actx.createAnalyser();an.fftSize=256;
     actx.createMediaStreamSource(stream).connect(an);
     const buf=new Uint8Array(an.frequencyBinCount);
     (function draw(){
+      if(!actx)return;
       an.getByteTimeDomainData(buf);
-      let m=0;for(const v of buf)m=Math.max(m,Math.abs(v-128));
+      let m=0;
+      for(const v of buf)m=Math.max(m,Math.abs(v-128));
       $('bar').style.width=Math.min(100,m*1.6)+'%';
       raf=requestAnimationFrame(draw);
     })();
   }catch{}
 }
+
+$('startBtn').onclick=beginCaller;
+
+$('joinBtn').onclick=()=>{
+  $('joinInput').classList.remove('hidden');
+  $('joinInputBtn').classList.remove('hidden');
+  $('joinInput').focus();
+};
+$('joinInputBtn').onclick=()=>{
+  const id=roomFromInput($('joinInput').value);
+  if(!id)return setStatus('homeStatus','Paste a valid call link or room code.',true);
+  prepareJoin(id);
+};
+
+$('copyLink').onclick=async()=>{
+  const link=shareUrl();
+  try{await navigator.clipboard.writeText(link);$('copyLink').textContent='Copied';setTimeout(()=>$('copyLink').textContent='Copy call link',1500)}
+  catch{setStatus('callerError','Copy failed. Press and hold the link to copy it.',true)}
+};
+$('shareLink').onclick=async()=>{
+  const link=shareUrl();
+  if(navigator.share){
+    try{await navigator.share({title:'Voice call',text:'Join my voice call',url:link})}catch{}
+  }else{
+    $('copyLink').click();
+  }
+};
+
+$('joinCallBtn').onclick=async()=>{
+  $('joinCallBtn').disabled=true;
+  try{
+    await setupPeer();
+    await openSocket();
+    setStatus('joinStatus','Connected to call server. Waiting for the call…');
+  }catch(e){
+    $('joinCallBtn').disabled=false;
+    setStatus('joinStatus',e.message,true);
+  }
+};
+
 $('muteBtn').onclick=()=>{
-  const t=stream.getAudioTracks()[0];t.enabled=!t.enabled;
+  const t=stream?.getAudioTracks()[0];
+  if(!t)return;
+  t.enabled=!t.enabled;
   $('muteBtn').textContent=t.enabled?'Mute':'Unmute';
 };
-$('hangBtn').onclick=end;
 
-function end(){
+$('hangBtn').onclick=()=>end(true);
+$('callerCancel').onclick=()=>end(true);
+$('joinCancel').onclick=()=>end(true);
+
+function end(notify=true){
+  if(notify)send({type:'hangup'});
   clearInterval(tick);cancelAnimationFrame(raf);
-  if(actx)actx.close().catch(()=>{});actx=null;
-  if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;
-  if(pc){pc.onconnectionstatechange=null;pc.close();pc=null}
-  $('remote').srcObject=null;$('timer').textContent='00:00';
-  $('muteBtn').textContent='Mute';$('answerIn').value='';
+  if(actx)actx.close().catch(()=>{});
+  actx=null;
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  stream=null;
+  if(pc){pc.close();pc=null}
+  if(socket){try{socket.close()}catch{}}
+  socket=null;
+  remoteCandidates=[];
+  restarting=false;
+  $('remote').srcObject=null;
+  $('timer').textContent='00:00';
+  $('bar').style.width='0';
+  $('muteBtn').textContent='Mute';
+  $('joinCallBtn').disabled=false;
+  setStatus('callerError','');
+  setStatus('joinStatus','');
+  setStatus('liveStatus','');
+  room=null;role=null;
+  history.replaceState({},'',location.pathname);
   view('home');
+}
+
+const initialRoom=new URLSearchParams(location.search).get('room');
+if(initialRoom){
+  if(/^[A-Za-z0-9_-]{16,80}$/.test(initialRoom)){
+    prepareJoin(initialRoom);
+  }else{
+    setStatus('homeStatus','That call link is invalid.',true);
+  }
 }
 </script>
 </body>
