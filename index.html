@@ -90,8 +90,14 @@ async function setup(){
   stream.getTracks().forEach(t=>pc.addTrack(t,stream));
   pc.ontrack=e=>{$('remote').srcObject=e.streams[0]};
   pc.onconnectionstatechange=()=>{
-    if(pc.connectionState==='connected')goLive();
-    else if(['failed','closed','disconnected'].includes(pc.connectionState))end();
+    if(pc.connectionState==='connected'){
+      goLive();
+    }else if(
+      ['failed','disconnected'].includes(pc.connectionState) &&
+      root.dataset.view==='live'
+    ){
+      end();
+    }
   };
 }
 function gathered(){
