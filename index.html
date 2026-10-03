@@ -82,7 +82,14 @@ const view=v=>root.dataset.view=v;
 let pc,stream,tick,raf,actx;
 
 const enc=d=>btoa(JSON.stringify(d));
-const dec=s=>JSON.parse(atob(s.trim()));
+function dec(s){
+  s=s.trim().replace(/\s+/g,'');
+  if(s.startsWith('VC1.')){
+    s=s.slice(4).replace(/-/g,'+').replace(/_/g,'/');
+    while(s.length%4)s+='=';
+  }
+  return JSON.parse(atob(s));
+}
 
 async function setup(){
   stream=await navigator.mediaDevices.getUserMedia({audio:true});
