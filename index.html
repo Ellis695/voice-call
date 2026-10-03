@@ -85,12 +85,12 @@ let pc,stream,tick,raf,actx;
 
 function enc(d){
   return 'VC1.'+btoa(JSON.stringify(d))
-    .replace(/\\+/g,'-')
-    .replace(/\\//g,'_')
+    .replace(/\+/g,'-')
+    .replace(/\//g,'_')
     .replace(/=+$/,'');
 }
 function dec(s){
-  s=s.trim().replace(/\\s+/g,'');
+  s=s.trim().replace(/\s+/g,'');
   if(s.startsWith('VC1.'))s=s.slice(4);
   s=s.replace(/-/g,'+').replace(/_/g,'/');
   while(s.length%4)s+='=';
