@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Voice Call</title>
+<style>
+:root{--bg:#f2f5f1;--panel:#fff;--ink:#15221d;--mute:#5d6e66;--line:#d3dcd6;--go:#1f7a4d;--stop:#c8402b;--on:#fff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101a16;--panel:#18261f;--ink:#eaf2ec;--mute:#93a79b;--line:#2a3d33;--go:#3fbf82;--stop:#ee6a52;--on:#0b1410}}
+:root[data-theme="dark"]{--bg:#101a16;--panel:#18261f;--ink:#eaf2ec;--mute:#93a79b;--line:#2a3d33;--go:#3fbf82;--stop:#ee6a52;--on:#0b1410}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:grid;place-items:center;padding:16px}
+main{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:28px 24px}
+h1{font-size:1.5rem;margin:0 0 4px}
+p{margin:0 0 16px;color:var(--mute)}
+section{display:none}
+main[data-view="home"] #home,main[data-view="caller"] #caller,main[data-view="joiner"] #joiner,main[data-view="live"] #live{display:block}
+button{font:inherit;font-weight:600;border:0;border-radius:12px;padding:12px 16px;cursor:pointer;background:var(--go);color:var(--on);width:100%;margin-top:10px}
+button.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button.stop{background:var(--stop);color:#fff}
+button:disabled{opacity:.5;cursor:default}
+:focus-visible{outline:3px solid var(--go);outline-offset:2px}
+label{display:block;font-weight:600;margin:14px 0 6px}
+textarea{width:100%;height:84px;resize:none;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg);color:var(--ink);font:12px/1.4 ui-monospace,Menlo,Consolas,monospace}
+.err{color:var(--stop);min-height:1.5em;margin:10px 0 0;font-size:.9rem}
+#live{text-align:center}
+#timer{font-size:3rem;font-weight:700;font-variant-numeric:tabular-nums;margin:12px 0 4px}
+.meter{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:16px 0 8px}
+#bar{height:100%;width:0;background:var(--go);transition:width .08s}
+</style>
+</head>
+<body>
+<main data-view="home">
+  <section id="home">
+    <h1>Voice call</h1>
+    <p>Talk to one person, directly from your browser. No account, no server.</p>
+    <button id="startBtn">Start a call</button>
+    <button id="joinBtn" class="alt">Join a call</button>
+  </section>
+
+  <section id="caller">
+    <h1>Start a call</h1>
+    <p>Send your invite code to the person you want to call.</p>
+    <label for="offerOut">1. Your invite code</label>
+    <textarea id="offerOut" readonly placeholder="Preparing…"></textarea>
+    <button id="copyOffer" class="alt">Copy invite code</button>
+    <label for="answerIn">2. Their reply code</label>
+    <textarea id="answerIn" placeholder="Paste the reply code here"></textarea>
+    <button id="connectBtn">Connect</button>
+    <button class="alt back">Cancel</button>
+    <p class="err" id="err1" role="alert"></p>
+  </section>
+
+  <section id="joiner">
+    <h1>Join a call</h1>
+    <p>Paste the invite code you received, then send your reply code back.</p>
+    <label for="offerIn">1. Invite code</label>
+    <textarea id="offerIn" placeholder="Paste the invite code here"></textarea>
+    <button id="makeAnswer">Create reply code</button>
+    <label for="answerOut">2. Your reply code</label>
+    <textarea id="answerOut" readonly placeholder="Appears after step 1"></textarea>
+    <button id="copyAnswer" class="alt">Copy reply code</button>
+    <button class="alt back">Cancel</button>
+    <p class="err" id="err2" role="alert"></p>
+  </section>
+
+  <section id="live">
+    <h1>In call</h1>
+    <div id="timer">00:00</div>
+    <div class="meter" aria-label="Your microphone level"><div id="bar"></div></div>
+    <p>Your microphone level</p>
+    <button id="muteBtn" class="alt">Mute</button>
+    <button id="hangBtn" class="stop">Hang up</button>
+  </section>
+</main>
+<audio id="remote" autoplay></audio>
+
+<script>
+const $=id=>document.getElementById(id), root=document.querySelector('main');
+const view=v=>root.dataset.view=v;
+let pc,stream,tick,raf,actx;
+
+const enc=d=>btoa(JSON.stringify(d));
+const dec=s=>JSON.parse(atob(s.trim()));
+
+async function setup(){
+  stream=await navigator.mediaDevices.getUserMedia({audio:true});
+  pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  pc.ontrack=e=>{$('remote').srcObject=e.streams[0]};
+  pc.onconnectionstatechange=()=>{
+    if(pc.connectionState==='connected')goLive();
+    else if(['failed','closed','disconnected'].includes(pc.connectionState))end();
+  };
+}
+function gathered(){
+  return new Promise(res=>{
+    if(pc.iceGatheringState==='complete')return res();
+    pc.onicegatheringstatechange=()=>pc.iceGatheringState==='complete'&&res();
+    setTimeout(res,4000);
+  });
+}
+function fail(el,e){
+  el.textContent=e.name==='NotAllowedError'?'Microphone access was blocked. Allow it in your browser and try again.':
+    e.name==='NotFoundError'?'No microphone found.':'Something went wrong: '+e.message;
+}
+
+$('startBtn').onclick=async()=>{
+  view('caller');$('err1').textContent='';$('offerOut').value='';
+  try{
+    await setup();
+    await pc.setLocalDescription(await pc.createOffer());
+    await gathered();
+    $('offerOut').value=enc(pc.localDescription);
+  }catch(e){fail($('err1'),e)}
+};
+$('connectBtn').onclick=async()=>{
+  $('err1').textContent='';
+  try{await pc.setRemoteDescription(dec($('answerIn').value));}
+  catch(e){$('err1').textContent='That reply code is not valid. Copy it again in full.'}
+};
+$('joinBtn').onclick=()=>{view('joiner');$('err2').textContent='';$('offerIn').value='';$('answerOut').value=''};
+$('makeAnswer').onclick=async()=>{
+  $('err2').textContent='';
+  let offer;
+  try{offer=dec($('offerIn').value)}catch{return $('err2').textContent='That invite code is not valid. Copy it again in full.'}
+  try{
+    await setup();
+    await pc.setRemoteDescription(offer);
+    await pc.setLocalDescription(await pc.createAnswer());
+    await gathered();
+    $('answerOut').value=enc(pc.localDescription);
+  }catch(e){fail($('err2'),e)}
+};
+const copy=(id,btn)=>async()=>{
+  const t=$(id).value;if(!t)return;
+  try{await navigator.clipboard.writeText(t)}catch{$(id).select();document.execCommand('copy')}
+  const old=btn.textContent;btn.textContent='Copied';setTimeout(()=>btn.textContent=old,1500);
+};
+$('copyOffer').onclick=copy('offerOut',$('copyOffer'));
+$('copyAnswer').onclick=copy('answerOut',$('copyAnswer'));
+document.querySelectorAll('.back').forEach(b=>b.onclick=end);
+
+function goLive(){
+  if(root.dataset.view==='live')return;
+  view('live');
+  const t0=Date.now();
+  tick=setInterval(()=>{
+    const s=Math.floor((Date.now()-t0)/1000);
+    $('timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+  },500);
+  try{
+    actx=new (window.AudioContext||window.webkitAudioContext)();
+    const an=actx.createAnalyser();an.fftSize=256;
+    actx.createMediaStreamSource(stream).connect(an);
+    const buf=new Uint8Array(an.frequencyBinCount);
+    (function draw(){
+      an.getByteTimeDomainData(buf);
+      let m=0;for(const v of buf)m=Math.max(m,Math.abs(v-128));
+      $('bar').style.width=Math.min(100,m*1.6)+'%';
+      raf=requestAnimationFrame(draw);
+    })();
+  }catch{}
+}
+$('muteBtn').onclick=()=>{
+  const t=stream.getAudioTracks()[0];t.enabled=!t.enabled;
+  $('muteBtn').textContent=t.enabled?'Mute':'Unmute';
+};
+$('hangBtn').onclick=end;
+
+function end(){
+  clearInterval(tick);cancelAnimationFrame(raf);
+  if(actx)actx.close().catch(()=>{});actx=null;
+  if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;
+  if(pc){pc.onconnectionstatechange=null;pc.close();pc=null}
+  $('remote').srcObject=null;$('timer').textContent='00:00';
+  $('muteBtn').textContent='Mute';$('answerIn').value='';
+  view('home');
+}
+</script>
+</body>
+</html>
