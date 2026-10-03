@@ -129,14 +129,30 @@ $('startBtn').onclick=async()=>{
   }catch(e){fail($('err1'),e)}
 };
 $('connectBtn').onclick=async()=>{
+  const btn=$('connectBtn');
   $('err1').textContent='';
+  if(!pc)return;
+  if(pc.signalingState==='stable'){
+    if(pc.currentRemoteDescription){
+      if(pc.connectionState==='connected')goLive();
+      return;
+    }
+    return $('err1').textContent='The call is already in a stable state. Start a new call and use a fresh reply code.';
+  }
+  btn.disabled=true;
   let answer;
   try{answer=dec($('answerIn').value)}
-  catch(e){return $('err1').textContent='That reply code is not valid. Copy it again in full.'}
+  catch(e){
+    btn.disabled=false;
+    return $('err1').textContent='That reply code is not valid. Copy it again in full.';
+  }
   try{
     if(!answer || answer.type!=='answer' || !answer.sdp) throw new Error('The reply code does not contain a valid WebRTC answer.');
     await pc.setRemoteDescription(answer);
-  }catch(e){$('err1').textContent='WebRTC connection error: '+e.message}
+  }catch(e){
+    $('err1').textContent='WebRTC connection error: '+e.message;
+    btn.disabled=false;
+  }
 };
 $('joinBtn').onclick=()=>{view('joiner');$('err2').textContent='';$('offerIn').value='';$('answerOut').value=''};
 $('makeAnswer').onclick=async()=>{
