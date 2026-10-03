@@ -9,13 +9,13 @@ Two-person browser voice calling with:
 - Mute, hang up, timer, and microphone level
 - No accounts, contacts, call history, profiles, or notification system
 
-GitHub Pages hosts the frontend. The Cloudflare Worker supplies signaling and short-lived TURN credentials. GitHub Pages itself is static hosting and cannot run the signaling server. citeturn1search0turn1search11
+GitHub Pages hosts the frontend. The Cloudflare Worker supplies signaling and short-lived TURN credentials. GitHub Pages itself is static hosting and cannot run the signaling server.
 
 ## 1. Create the Cloudflare TURN key
 
 Create a TURN key in the Cloudflare dashboard under Realtime → TURN.
 
-The Worker must keep the long-lived TURN key secret and generate short-lived credentials for browsers. Cloudflare documents this flow and the returned ICE server configuration. citeturn4view0
+The Worker must keep the long-lived TURN key secret and generate short-lived credentials for browsers. Cloudflare's TURN service generates short-lived ICE credentials for browsers.
 
 ## 2. Deploy the signaling Worker
 
@@ -36,7 +36,7 @@ npx wrangler secret put TURN_KEY_ID
 npx wrangler secret put TURN_KEY_API_TOKEN
 ```
 
-Wrangler stores Worker secrets separately from the source code; do not put these values into `config.js`, GitHub, or any browser code. citeturn10search3turn10search10
+Wrangler stores Worker secrets separately from the source code; do not put these values into `config.js`, GitHub, or any browser code.
 
 Deploy:
 
@@ -56,7 +56,7 @@ The Worker contains:
 - `/ice` — short-lived STUN/TURN credentials
 - `/health` — health check
 
-The signaling WebSocket uses a Durable Object room so each call has one coordination point for its two participants. Cloudflare recommends the hibernating WebSocket API for this kind of long-lived signaling connection. citeturn6search1turn5search0
+The signaling WebSocket uses a Durable Object room so each call has one coordination point for its two participants. Cloudflare recommends the hibernating WebSocket API for this kind of long-lived signaling connection.
 
 ## 3. Connect the GitHub Pages frontend
 
@@ -109,6 +109,6 @@ The repository now contains the complete application code, but the Cloudflare Wo
 - your TURN API token
 - the resulting Worker URL in `config.js`
 
-The TURN credentials are generated for short lifetimes rather than exposing the long-lived TURN key to browsers. citeturn4view0
+The TURN credentials are generated for short lifetimes rather than exposing the long-lived TURN key to browsers.
 
-For small personal testing, Cloudflare currently documents a 1,000 GB monthly free allowance for Realtime TURN before usage charges; TURN usage beyond the included allowance is usage-based. citeturn5search9turn5search14
+For small personal testing, Cloudflare currently documents a 1,000 GB monthly free allowance for Realtime TURN before usage charges; TURN usage beyond the included allowance is usage-based.
