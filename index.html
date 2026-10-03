@@ -70,6 +70,8 @@ textarea{width:100%;height:84px;resize:none;border:1px solid var(--line);border-
     <div id="timer">00:00</div>
     <div class="meter" aria-label="Your microphone level"><div id="bar"></div></div>
     <p>Your microphone level</p>
+    <p id="status" aria-live="polite">Status: waiting</p>
+    <p id="iceStatus" aria-live="polite">ICE: new</p>
     <button id="muteBtn" class="alt">Mute</button>
     <button id="hangBtn" class="stop">Hang up</button>
   </section>
@@ -90,6 +92,8 @@ async function setup(){
   stream.getTracks().forEach(t=>pc.addTrack(t,stream));
   pc.ontrack=e=>{$('remote').srcObject=e.streams[0]};
   pc.onconnectionstatechange=()=>{
+    console.log('connectionState:',pc.connectionState,'iceConnectionState:',pc.iceConnectionState);
+    setStatus(pc.connectionState,pc.iceConnectionState);
     if(pc.connectionState==='connected'){
       goLive();
     }else if(
@@ -99,6 +103,17 @@ async function setup(){
       end();
     }
   };
+  pc.oniceconnectionstatechange=()=>{
+    console.log('iceConnectionState:',pc.iceConnectionState);
+    setStatus(pc.connectionState,pc.iceConnectionState);
+  };
+  pc.onicegatheringstatechange=()=>{
+    console.log('iceGatheringState:',pc.iceGatheringState);
+    setStatus(pc.connectionState,pc.iceConnectionState);
+  };
+  pc.onsignalingstatechange=()=>{
+    console.log('signalingState:',pc.signalingState);
+  };
 }
 function gathered(){
   return new Promise(res=>{
@@ -106,6 +121,10 @@ function gathered(){
     pc.onicegatheringstatechange=()=>pc.iceGatheringState==='complete'&&res();
     setTimeout(res,4000);
   });
+}
+function setStatus(connection,ice){
+  if($('status'))$('status').textContent='Connection: '+connection;
+  if($('iceStatus'))$('iceStatus').textContent='ICE: '+ice;
 }
 function fail(el,e){
   el.textContent=e.name==='NotAllowedError'?'Microphone access was blocked. Allow it in your browser and try again.':
@@ -151,6 +170,7 @@ document.querySelectorAll('.back').forEach(b=>b.onclick=end);
 function goLive(){
   if(root.dataset.view==='live')return;
   view('live');
+  setStatus(pc?.connectionState||'new',pc?.iceConnectionState||'new');
   const t0=Date.now();
   tick=setInterval(()=>{
     const s=Math.floor((Date.now()-t0)/1000);
