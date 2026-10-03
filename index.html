@@ -175,7 +175,10 @@ async function setupPeer(){
 }
 
 async function handleRemoteCandidate(candidate){
-  if(!pc)return;
+  if(!pc){
+    remoteCandidates.push(candidate);
+    return;
+  }
   if(pc.remoteDescription){
     try{await pc.addIceCandidate(candidate)}
     catch(e){setStatus(role==='caller'?'callerError':'joinStatus','ICE candidate error: '+e.message,true)}
