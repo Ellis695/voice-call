@@ -130,8 +130,13 @@ $('startBtn').onclick=async()=>{
 };
 $('connectBtn').onclick=async()=>{
   $('err1').textContent='';
-  try{await pc.setRemoteDescription(dec($('answerIn').value));}
-  catch(e){$('err1').textContent='That reply code is not valid. Copy it again in full.'}
+  let answer;
+  try{answer=dec($('answerIn').value)}
+  catch(e){return $('err1').textContent='That reply code is not valid. Copy it again in full.'}
+  try{
+    if(!answer || answer.type!=='answer' || !answer.sdp) throw new Error('The reply code does not contain a valid WebRTC answer.');
+    await pc.setRemoteDescription(answer);
+  }catch(e){$('err1').textContent='WebRTC connection error: '+e.message}
 };
 $('joinBtn').onclick=()=>{view('joiner');$('err2').textContent='';$('offerIn').value='';$('answerOut').value=''};
 $('makeAnswer').onclick=async()=>{
