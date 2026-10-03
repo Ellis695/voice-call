@@ -3,6 +3,9 @@
   "name": "voice-call-signal",
   "main": "src/index.js",
   "compatibility_date": "2026-10-02",
+  "secrets": {
+    "required": ["TURN_KEY_ID", "TURN_KEY_API_TOKEN"]
+  },
   "durable_objects": {
     "bindings": [
       {
