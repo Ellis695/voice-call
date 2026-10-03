@@ -318,8 +318,6 @@ export class CallRoom extends DurableObject {
 
     if (this.sessions.size === 0) {
       await this.ctx.storage.deleteAll();
-    } else if (state) {
-      await this.ctx.storage.deleteAll();
     }
   }
 
