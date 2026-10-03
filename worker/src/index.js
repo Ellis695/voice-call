@@ -266,6 +266,9 @@ export class CallRoom extends DurableObject {
 
     if (data.type === "offer" && state.role === "caller" && data.offer) {
       await this.ctx.storage.put("offer", data.offer);
+      await this.ctx.storage.delete("answer");
+      await this.ctx.storage.put("callerCandidates", []);
+      await this.ctx.storage.put("joinerCandidates", []);
       const peer = this.getPeer(ws);
       if (peer?.readyState === WebSocket.OPEN) {
         peer.send(JSON.stringify({
@@ -278,6 +281,7 @@ export class CallRoom extends DurableObject {
 
     if (data.type === "answer" && state.role === "joiner" && data.answer) {
       await this.ctx.storage.put("answer", data.answer);
+      await this.ctx.storage.put("joinerCandidates", []);
       const peer = this.getPeer(ws);
       if (peer?.readyState === WebSocket.OPEN) {
         peer.send(JSON.stringify({
