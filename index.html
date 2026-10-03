@@ -98,12 +98,24 @@ async function setup(){
   pc.ontrack=e=>{$('remote').srcObject=e.streams[0]};
   pc.onconnectionstatechange=()=>{
     if(pc.connectionState==='connected'){
+      $('err1').textContent='';$('err2').textContent='';
       goLive();
-    }else if(
-      ['failed','disconnected'].includes(pc.connectionState) &&
-      root.dataset.view==='live'
-    ){
-      end();
+    }else if(pc.connectionState==='failed'){
+      const msg='WebRTC connection failed. ICE state: '+pc.iceConnectionState+'.';
+      if(root.dataset.view==='caller')$('err1').textContent=msg;
+      else if(root.dataset.view==='joiner')$('err2').textContent=msg;
+      else end();
+    }else if(pc.connectionState==='disconnected'){
+      if(root.dataset.view==='caller')$('err1').textContent='WebRTC connection disconnected. ICE state: '+pc.iceConnectionState+'.';
+      else if(root.dataset.view==='joiner')$('err2').textContent='WebRTC connection disconnected. ICE state: '+pc.iceConnectionState+'.';
+      else end();
+    }
+  };
+  pc.oniceconnectionstatechange=()=>{
+    if(['checking','connected','completed'].includes(pc.iceConnectionState)){
+      const msg='Connecting… ICE: '+pc.iceConnectionState;
+      if(root.dataset.view==='caller')$('err1').textContent=msg;
+      else if(root.dataset.view==='joiner')$('err2').textContent=msg;
     }
   };
 }
